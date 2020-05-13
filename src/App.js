@@ -18,55 +18,47 @@ function validateMediaTrackConstraints(mediaType) {
   }
 }
 
+const noop = () => {};
+
 function useMediaRecorder({
-  blobPropertyBag,
-  audio = true,
-  video = false,
-  screen = false,
-  onStop = () => null,
-  mediaRecorderOptions = null
-}) {
-  let mediaRecorder = React.useRef(null);
+  onStop = noop,
+  onStart = noop,
+  mediaRecorderOptions = null,
+  blobOptions = { type: 'video/mp4' },
+  mediaStreamConstraints = { audio: true, video: true }
+} = {}) {
   let mediaChunks = React.useRef([]);
   let mediaStream = React.useRef(null);
-  let [status, setStatus] = React.useState('idle');
-  let [isAudioMuted, setIsAudioMuted] = React.useState(false);
-  let [mediaBlobUrl, setMediaBlobUrl] = React.useState(null);
+  let mediaRecorder = React.useRef(null);
   let [error, setError] = React.useState(null);
+  let [status, setStatus] = React.useState('idle');
+  let [mediaBlob, setMediaBlob] = React.useState(null);
+  let [mediaBlobUrl, setMediaBlobUrl] = React.useState(null);
+  let [isAudioMuted, setIsAudioMuted] = React.useState(false);
 
   async function getMediaStream() {
     setStatus('acquiring_media');
 
-    let requiredMedia = { audio, video };
-
     try {
-      let stream;
+      let stream = await window.navigator.mediaDevices.getDisplayMedia(
+        mediaStreamConstraints
+      );
 
-      if (screen) {
-        stream = await window.navigator.mediaDevices.getDisplayMedia({
-          video: video || true
+      if (mediaStreamConstraints.audio) {
+        let audioStream = await window.navigator.mediaDevices.getUserMedia({
+          audio: mediaStreamConstraints.audio
         });
 
-        if (audio) {
-          let audioStream = await window.navigator.mediaDevices.getUserMedia({
-            audio
-          });
-
-          audioStream
-            .getAudioTracks()
-            .forEach(audioTrack => stream.addTrack(audioTrack));
-        }
-      } else {
-        stream = await window.navigator.mediaDevices.getDisplayMedia(
-          requiredMedia
-        );
+        audioStream
+          .getAudioTracks()
+          .forEach(audioTrack => stream.addTrack(audioTrack));
       }
 
       mediaStream.current = stream;
       setStatus('ready');
     } catch (err) {
       setError(err.message);
-      setStatus('idle');
+      setStatus('failed');
     }
   }
 
@@ -78,7 +70,10 @@ function useMediaRecorder({
     }
 
     if (mediaStream.current) {
-      mediaRecorder.current = new MediaRecorder(mediaStream.current);
+      mediaRecorder.current = new MediaRecorder(
+        mediaStream.current,
+        mediaRecorderOptions
+      );
       mediaRecorder.current.addEventListener(
         'dataavailable',
         handleDataAvailable
@@ -87,6 +82,7 @@ function useMediaRecorder({
       mediaRecorder.current.addEventListener('error', handleError);
       mediaRecorder.current.start();
       setStatus('recording');
+      onStart();
     }
   }
 
@@ -95,21 +91,12 @@ function useMediaRecorder({
   }
 
   function handleStop() {
-    let blobProperty = blobPropertyBag;
-
-    if (!isObject(blobProperty) && video) {
-      blobProperty = { type: 'video/mp4' };
-    }
-
-    if (!isObject(blobProperty) && audio) {
-      blobProperty = { type: 'audio/wav' };
-    }
-
-    let blob = new Blob(mediaChunks.current, blobProperty);
+    let blob = new Blob(mediaChunks.current, blobOptions);
     let url = URL.createObjectURL(blob);
 
     setStatus('stopped');
     setMediaBlobUrl(url);
+    setMediaBlob(blob);
     onStop(url);
   }
 
@@ -144,9 +131,7 @@ function useMediaRecorder({
     if (mediaRecorder.current) {
       setStatus('stopping');
       mediaRecorder.current.stop();
-      mediaStream.current
-        .getVideoTracks()
-        .forEach(videoTrack => videoTrack.stop());
+      mediaStream.current.getTracks().forEach(track => track.stop());
       mediaRecorder.current.removeEventListener(
         'dataavailable',
         handleDataAvailable
@@ -164,16 +149,16 @@ function useMediaRecorder({
       throw new Error('Unsupported browser');
     }
 
-    if (screen && !window.navigator.mediaDevices.getDisplayMedia) {
+    if (!window.navigator.mediaDevices.getDisplayMedia) {
       throw new Error("This browser doesn't support screen capturing");
     }
 
-    if (isObject(audio)) {
-      validateMediaTrackConstraints(audio);
+    if (isObject(mediaStreamConstraints.video)) {
+      validateMediaTrackConstraints(mediaStreamConstraints.video);
     }
 
-    if (isObject(video)) {
-      validateMediaTrackConstraints(video);
+    if (isObject(mediaStreamConstraints.audio)) {
+      validateMediaTrackConstraints(mediaStreamConstraints.audio);
     }
 
     if (mediaRecorderOptions && mediaRecorderOptions.mimeType) {
@@ -183,13 +168,14 @@ function useMediaRecorder({
         );
       }
     }
-  }, [audio, screen, video, mediaRecorderOptions]);
+  }, [mediaStreamConstraints, mediaRecorderOptions]);
 
   return {
     error,
     status,
-    isAudioMuted,
+    mediaBlob,
     mediaBlobUrl,
+    isAudioMuted,
     stopRecording,
     getMediaStream,
     startRecording,
@@ -197,7 +183,7 @@ function useMediaRecorder({
     resumeRecording,
     muteAudio: () => muteAudio(true),
     unMuteAudio: () => muteAudio(false),
-    get previewStream() {
+    get liveStream() {
       if (mediaStream.current) {
         return new MediaStream(mediaStream.current);
       }
@@ -220,7 +206,14 @@ function LiveStream({ stream }) {
   }
 
   return (
-    <video ref={videoPreviewRef} width={520} height={480} autoPlay controls />
+    <video
+      ref={videoPreviewRef}
+      width={520}
+      height={480}
+      autoPlay
+      controls
+      muted
+    />
   );
 }
 
@@ -228,12 +221,12 @@ export default function App() {
   let {
     error,
     status,
+    liveStream,
     mediaBlobUrl,
     stopRecording,
-    previewStream,
     getMediaStream,
     startRecording
-  } = useMediaRecorder({ screen: true });
+  } = useMediaRecorder();
 
   return (
     <article>
@@ -244,7 +237,7 @@ export default function App() {
           onClick={getMediaStream}
           disabled={status === 'ready'}
         >
-          Select screen
+          Share screen
         </button>
         <button
           type="button"
@@ -261,7 +254,7 @@ export default function App() {
           Stop recording
         </button>
       </section>
-      <LiveStream stream={previewStream} />
+      <LiveStream stream={liveStream} />
       <video src={mediaBlobUrl} width={520} height={480} />
     </article>
   );
