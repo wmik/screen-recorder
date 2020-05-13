@@ -1,66 +1,259 @@
 import React from 'react';
 
-export default function App() {
-  let [isRecording, setIsRecording] = React.useState(false);
-  let videoRef = React.useRef();
-  let streamRef = React.useRef();
-  let recorderRef = React.useRef();
+function isObject(o) {
+  return o && !Array.isArray(o) && Object(o) === o;
+}
 
-  function handleStart() {
-    setIsRecording(true);
+function validateMediaTrackConstraints(mediaType) {
+  let supportedMediaConstraints = navigator.mediaDevices.getSupportedConstraints();
+  let unSupportedMediaConstraints = Object.keys(mediaType).filter(
+    constraint => !supportedMediaConstraints[constraint]
+  );
+
+  if (unSupportedMediaConstraints.length !== 0) {
+    let toText = unSupportedMediaConstraints.join(',');
+    console.error(
+      `The constraints ${toText} doesn't support on this browser. Please check your ReactMediaRecorder component.`
+    );
   }
+}
 
-  function handleStop() {
-    setIsRecording(false);
-  }
+function useMediaRecorder({
+  blobPropertyBag,
+  audio = true,
+  video = false,
+  screen = false,
+  onStop = () => null,
+  mediaRecorderOptions = null
+}) {
+  let mediaRecorder = React.useRef(null);
+  let mediaChunks = React.useRef([]);
+  let mediaStream = React.useRef(null);
+  let [status, setStatus] = React.useState('idle');
+  let [isAudioMuted, setIsAudioMuted] = React.useState(false);
+  let [mediaBlobUrl, setMediaBlobUrl] = React.useState(null);
+  let [error, setError] = React.useState(null);
 
-  React.useEffect(() => {
-    async function startRecording() {
-      streamRef.current = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: 'screen' }
-      });
-      recorderRef.current = new MediaRecorder(streamRef.current);
-      let chunks = [];
+  async function getMediaStream() {
+    setStatus('acquiring_media');
 
-      function handleDataAvailable(e) {
-        chunks.push(e.data);
+    let requiredMedia = { audio, video };
+
+    try {
+      let stream;
+
+      if (screen) {
+        stream = await window.navigator.mediaDevices.getDisplayMedia({
+          video: video || true
+        });
+
+        if (audio) {
+          let audioStream = await window.navigator.mediaDevices.getUserMedia({
+            audio
+          });
+
+          audioStream
+            .getAudioTracks()
+            .forEach(audioTrack => stream.addTrack(audioTrack));
+        }
+      } else {
+        stream = await window.navigator.mediaDevices.getDisplayMedia(
+          requiredMedia
+        );
       }
 
-      function handleStopRecorder() {
-        let [sampleChunk] = chunks;
-        let recordingBlob = new Blob(chunks, { type: sampleChunk.type });
-        videoRef.current.src = URL.createObjectURL(recordingBlob);
-      }
+      mediaStream.current = stream;
+      setStatus('ready');
+    } catch (err) {
+      setError(err.message);
+      setStatus('idle');
+    }
+  }
 
-      recorderRef.current.addEventListener(
+  async function startRecording() {
+    setError(null);
+
+    if (!mediaStream.current) {
+      await getMediaStream();
+    }
+
+    if (mediaStream.current) {
+      mediaRecorder.current = new MediaRecorder(mediaStream.current);
+      mediaRecorder.current.addEventListener(
         'dataavailable',
         handleDataAvailable
       );
-      recorderRef.current.addEventListener('stop', handleStopRecorder);
-      recorderRef.current.start();
+      mediaRecorder.current.addEventListener('stop', handleStop);
+      mediaRecorder.current.addEventListener('error', handleError);
+      mediaRecorder.current.start();
+      setStatus('recording');
+    }
+  }
+
+  function handleDataAvailable(e) {
+    mediaChunks.current.push(e.data);
+  }
+
+  function handleStop() {
+    let blobProperty = blobPropertyBag;
+
+    if (!isObject(blobProperty) && video) {
+      blobProperty = { type: 'video/mp4' };
     }
 
-    if (isRecording) {
-      startRecording();
+    if (!isObject(blobProperty) && audio) {
+      blobProperty = { type: 'audio/wav' };
     }
 
-    if (!isRecording && recorderRef.current) {
-      recorderRef.current.stop();
-      streamRef.current.getVideoTracks()[0].stop();
+    let blob = new Blob(mediaChunks.current, blobProperty);
+    let url = URL.createObjectURL(blob);
+
+    setStatus('stopped');
+    setMediaBlobUrl(url);
+    onStop(url);
+  }
+
+  function handleError() {
+    setError('NO_RECORDER');
+    setStatus('idle');
+  }
+
+  function muteAudio(mute) {
+    setIsAudioMuted(mute);
+
+    if (mediaStream.current) {
+      mediaStream.current.getAudioTracks().forEach(audioTrack => {
+        audioTrack.enabled = !mute;
+      });
     }
-  }, [isRecording]);
+  }
+
+  function pauseRecording() {
+    if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
+      mediaRecorder.current.pause();
+    }
+  }
+
+  function resumeRecording() {
+    if (mediaRecorder.current && mediaRecorder.current.state === 'paused') {
+      mediaRecorder.current.resume();
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder.current) {
+      setStatus('stopping');
+      mediaRecorder.current.stop();
+      mediaRecorder.current = undefined;
+      mediaStream.current = undefined;
+      mediaChunks.current = [];
+    }
+  }
+
+  React.useEffect(() => {
+    if (!window.MediaRecorder) {
+      throw new Error('Unsupported browser');
+    }
+
+    if (screen && !window.navigator.mediaDevices.getDisplayMedia) {
+      throw new Error("This browser doesn't support screen capturing");
+    }
+
+    if (isObject(audio)) {
+      validateMediaTrackConstraints(audio);
+    }
+
+    if (isObject(video)) {
+      validateMediaTrackConstraints(video);
+    }
+
+    if (mediaRecorderOptions && mediaRecorderOptions.mimeType) {
+      if (!MediaRecorder.isTypeSupported(mediaRecorderOptions.mimeType)) {
+        console.error(
+          `The specified MIME type you supplied for MediaRecorder doesn't support this browser`
+        );
+      }
+    }
+  }, [audio, screen, video, mediaRecorderOptions]);
+
+  return {
+    error,
+    status,
+    isAudioMuted,
+    mediaBlobUrl,
+    stopRecording,
+    getMediaStream,
+    startRecording,
+    pauseRecording,
+    resumeRecording,
+    muteAudio: () => muteAudio(true),
+    unMuteAudio: () => muteAudio(false),
+    get previewStream() {
+      if (mediaStream.current) {
+        return new MediaStream(mediaStream.current);
+      }
+      return null;
+    }
+  };
+}
+
+function LiveStream({ stream }) {
+  let videoPreviewRef = React.useRef();
+
+  React.useEffect(() => {
+    if (videoPreviewRef.current && stream) {
+      videoPreviewRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  if (!stream) {
+    return null;
+  }
+
+  return (
+    <video ref={videoPreviewRef} width={520} height={480} autoPlay controls />
+  );
+}
+
+export default function App() {
+  let {
+    error,
+    status,
+    mediaBlobUrl,
+    stopRecording,
+    previewStream,
+    getMediaStream,
+    startRecording
+  } = useMediaRecorder({ screen: true });
 
   return (
     <article>
+      {error ? error : status}
       <section>
-        <button type="button" onClick={handleStart} disabled={isRecording}>
+        <button
+          type="button"
+          onClick={getMediaStream}
+          disabled={status === 'ready'}
+        >
+          Select screen
+        </button>
+        <button
+          type="button"
+          onClick={startRecording}
+          disabled={status === 'recording'}
+        >
           Start recording
         </button>
-        <button type="button" onClick={handleStop} disabled={!isRecording}>
+        <button
+          type="button"
+          onClick={stopRecording}
+          disabled={status !== 'recording'}
+        >
           Stop recording
         </button>
       </section>
-      <video ref={videoRef} />
+      <LiveStream stream={previewStream} />
+      <video src={mediaBlobUrl} width={520} height={480} />
     </article>
   );
 }
