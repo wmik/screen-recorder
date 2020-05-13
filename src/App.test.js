@@ -1,19 +1,12 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import App from './App';
 
-test('button state', async () => {
+test('home UI', async () => {
   let { findByText } = render(<App />);
 
-  let startButton = await findByText(/start/i, { selector: 'button' });
-  let stopButton = await findByText(/stop/i, { selector: 'button' });
-
-  expect(startButton).toBeVisible();
-  expect(stopButton).toBeVisible();
-  expect(stopButton).toBeDisabled();
-
-  expect(fireEvent.click(startButton)).toBe(true);
-  expect(stopButton).toBeEnabled();
-  expect(startButton).toBeDisabled();
+  expect(await findByText(/record video/i, { selector: 'a' })).toBeVisible();
+  expect(await findByText(/record audio/i, { selector: 'a' })).toBeVisible();
+  expect(await findByText(/record screen/i, { selector: 'a' })).toBeVisible();
 });

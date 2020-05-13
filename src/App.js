@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link, Router } from '@reach/router';
 
 function isObject(o) {
   return o && !Array.isArray(o) && Object(o) === o;
@@ -21,11 +22,11 @@ function validateMediaTrackConstraints(mediaType) {
 const noop = () => {};
 
 function useMediaRecorder({
+  blobOptions,
   recordScreen,
   onStop = noop,
   onStart = noop,
   mediaRecorderOptions = null,
-  blobOptions = { type: 'video/mp4' },
   mediaStreamConstraints = { audio: true, video: true }
 } = {}) {
   let mediaChunks = React.useRef([]);
@@ -66,7 +67,7 @@ function useMediaRecorder({
       mediaStream.current = stream;
       setStatus('ready');
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setStatus('failed');
     }
   }
@@ -100,7 +101,12 @@ function useMediaRecorder({
   }
 
   function handleStop() {
-    let blob = new Blob(mediaChunks.current, blobOptions);
+    let [sampleChunk] = mediaChunks.current;
+    let blobPropertyBag = Object.assign(
+      { type: sampleChunk.type },
+      blobOptions
+    );
+    let blob = new Blob(mediaChunks.current, blobPropertyBag);
     let url = URL.createObjectURL(blob);
 
     setStatus('stopped');
@@ -109,8 +115,8 @@ function useMediaRecorder({
     onStop(url);
   }
 
-  function handleError() {
-    setError('NO_RECORDER');
+  function handleError(e) {
+    setError(e.error);
     setStatus('idle');
   }
 
@@ -226,7 +232,7 @@ function LiveStream({ stream }) {
   );
 }
 
-export default function App() {
+function VideoRecorderApp() {
   let {
     error,
     status,
@@ -235,11 +241,59 @@ export default function App() {
     stopRecording,
     getMediaStream,
     startRecording
-  } = useMediaRecorder({ recordScreen: true });
+  } = useMediaRecorder();
 
   return (
     <article>
-      {error ? error : status}
+      <h1>Video recorder</h1>
+      {error ? error.message : status}
+      <section>
+        <button
+          type="button"
+          onClick={getMediaStream}
+          disabled={status === 'ready'}
+        >
+          Enable camera
+        </button>
+        <button
+          type="button"
+          onClick={startRecording}
+          disabled={status === 'recording'}
+        >
+          Start recording
+        </button>
+        <button
+          type="button"
+          onClick={stopRecording}
+          disabled={status !== 'recording'}
+        >
+          Stop recording
+        </button>
+      </section>
+      <LiveStream stream={liveStream} />
+      <video src={mediaBlobUrl} width={520} height={480} />
+    </article>
+  );
+}
+
+function ScreenRecorderApp() {
+  let {
+    error,
+    status,
+    liveStream,
+    mediaBlobUrl,
+    stopRecording,
+    getMediaStream,
+    startRecording
+  } = useMediaRecorder({
+    recordScreen: true,
+    blobOptions: { type: 'video/mp4' }
+  });
+
+  return (
+    <article>
+      <h1>Screen recorder</h1>
+      {error ? error.message : status}
       <section>
         <button
           type="button"
@@ -266,5 +320,70 @@ export default function App() {
       <LiveStream stream={liveStream} />
       <video src={mediaBlobUrl} width={520} height={480} />
     </article>
+  );
+}
+function AudioRecorderApp() {
+  let {
+    error,
+    status,
+    mediaBlobUrl,
+    stopRecording,
+    startRecording
+  } = useMediaRecorder({
+    mediaStreamConstraints: { audio: true },
+    blobOptions: { type: 'audio/mp3' }
+  });
+
+  return (
+    <article>
+      <h1>Audio recorder</h1>
+      {error ? error.message : status}
+      <section>
+        <button
+          type="button"
+          onClick={startRecording}
+          disabled={status === 'recording'}
+        >
+          Start recording
+        </button>
+        <button
+          type="button"
+          onClick={stopRecording}
+          disabled={status !== 'recording'}
+        >
+          Stop recording
+        </button>
+      </section>
+      <audio src={mediaBlobUrl} controls />
+    </article>
+  );
+}
+
+function Home() {
+  return (
+    <nav>
+      <ul>
+        <li>
+          <Link to="/video">Record video</Link>
+        </li>
+        <li>
+          <Link to="/audio">Record audio</Link>
+        </li>
+        <li>
+          <Link to="/screen">Record screen</Link>
+        </li>
+      </ul>
+    </nav>
+  );
+}
+
+export default function App() {
+  return (
+    <Router>
+      <VideoRecorderApp path="video" />
+      <AudioRecorderApp path="audio" />
+      <ScreenRecorderApp path="screen" />
+      <Home default />
+    </Router>
   );
 }
