@@ -144,6 +144,15 @@ function useMediaRecorder({
     if (mediaRecorder.current) {
       setStatus('stopping');
       mediaRecorder.current.stop();
+      mediaStream.current
+        .getVideoTracks()
+        .forEach(videoTrack => videoTrack.stop());
+      mediaRecorder.current.removeEventListener(
+        'dataavailable',
+        handleDataAvailable
+      );
+      mediaRecorder.current.removeEventListener('stop', handleStop);
+      mediaRecorder.current.removeEventListener('error', handleError);
       mediaRecorder.current = undefined;
       mediaStream.current = undefined;
       mediaChunks.current = [];
