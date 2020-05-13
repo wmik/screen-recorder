@@ -21,6 +21,7 @@ function validateMediaTrackConstraints(mediaType) {
 const noop = () => {};
 
 function useMediaRecorder({
+  recordScreen,
   onStop = noop,
   onStart = noop,
   mediaRecorderOptions = null,
@@ -40,11 +41,19 @@ function useMediaRecorder({
     setStatus('acquiring_media');
 
     try {
-      let stream = await window.navigator.mediaDevices.getDisplayMedia(
-        mediaStreamConstraints
-      );
+      let stream;
 
-      if (mediaStreamConstraints.audio) {
+      if (recordScreen) {
+        stream = await window.navigator.mediaDevices.getDisplayMedia(
+          mediaStreamConstraints
+        );
+      } else {
+        stream = await window.navigator.mediaDevices.getUserMedia(
+          mediaStreamConstraints
+        );
+      }
+
+      if (recordScreen && mediaStreamConstraints.audio) {
         let audioStream = await window.navigator.mediaDevices.getUserMedia({
           audio: mediaStreamConstraints.audio
         });
@@ -226,7 +235,7 @@ export default function App() {
     stopRecording,
     getMediaStream,
     startRecording
-  } = useMediaRecorder();
+  } = useMediaRecorder({ recordScreen: true });
 
   return (
     <article>
