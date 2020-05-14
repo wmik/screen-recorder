@@ -1,10 +1,18 @@
 import React from 'react';
 import { Link, Router } from '@reach/router';
 
+/**
+ * Checks whether the argument is an object
+ * @param {any} o
+ */
 function isObject(o) {
   return o && !Array.isArray(o) && Object(o) === o;
 }
 
+/**
+ * Checks whether constraints are valid
+ * @param {MediaStreamConstraints} mediaType
+ */
 function validateMediaTrackConstraints(mediaType) {
   let supportedMediaConstraints = navigator.mediaDevices.getSupportedConstraints();
   let unSupportedMediaConstraints = Object.keys(mediaType).filter(
@@ -21,6 +29,40 @@ function validateMediaTrackConstraints(mediaType) {
 
 const noop = () => {};
 
+/**
+ * @typedef BlobOptions
+ * @type {object}
+ * @property {string} type
+ *
+ * @typedef MediaRecorderProps
+ * @type {object}
+ * @property {BlobOptions} blobOptions
+ * @property {boolean} recordScreen
+ * @property {function} onStart
+ * @property {function} onStop
+ * @property {function} onError
+ * @property {object} mediaRecorderOptions
+ * @property {MediaStreamConstraints} mediaStreamConstraints
+ *
+ * @typedef MediaRecorderHookOptions
+ * @type {object}
+ * @property {Error} error
+ * @property {string} status
+ * @property {Blob} mediaBlob
+ * @property {string} mediaBlobUrl
+ * @property {boolean} isAudioMuted
+ * @property {function} stopRecording,
+ * @property {function} getMediaStream,
+ * @property {function} startRecording,
+ * @property {function} pauseRecording,
+ * @property {function} resumeRecording,
+ * @property {function} muteAudio
+ * @property {function} unMuteAudio
+ * @property {MediaStream} liveStream
+ *
+ * @param {MediaRecorderProps}
+ * @returns {MediaRecorderHookOptions}
+ */
 function useMediaRecorder({
   blobOptions,
   recordScreen,
@@ -40,7 +82,10 @@ function useMediaRecorder({
   let [isAudioMuted, setIsAudioMuted] = React.useState(false);
 
   async function getMediaStream() {
-    setError(null);
+    if (error) {
+      setError(null);
+    }
+
     setStatus('acquiring_media');
 
     try {
@@ -75,7 +120,9 @@ function useMediaRecorder({
   }
 
   async function startRecording() {
-    setError(null);
+    if (error) {
+      setError(null);
+    }
 
     if (!mediaStream.current) {
       await getMediaStream();
@@ -99,7 +146,9 @@ function useMediaRecorder({
   }
 
   function handleDataAvailable(e) {
-    mediaChunks.current.push(e.data);
+    if (e.data.size) {
+      mediaChunks.current.push(e.data);
+    }
   }
 
   function handleStop() {
@@ -214,6 +263,13 @@ function useMediaRecorder({
   };
 }
 
+/**
+ * @typedef LiveStreamPreviewProps
+ * @type {object}
+ * @property {MediaStream} stream
+ *
+ * @param {LiveStreamPreviewProps}
+ */
 function LiveStreamPreview({ stream }) {
   let videoPreviewRef = React.useRef();
 
@@ -273,7 +329,12 @@ function VideoRecorderApp() {
         </button>
       </section>
       <LiveStreamPreview stream={liveStream} />
-      <video src={mediaBlobUrl} width={520} height={480} />
+      <video
+        src={mediaBlobUrl}
+        width={520}
+        height={480}
+        controls={status === 'stopped'}
+      />
     </article>
   );
 }
@@ -321,10 +382,16 @@ function ScreenRecorderApp() {
         </button>
       </section>
       <LiveStreamPreview stream={liveStream} />
-      <video src={mediaBlobUrl} width={520} height={480} />
+      <video
+        src={mediaBlobUrl}
+        width={520}
+        height={480}
+        controls={status === 'stopped'}
+      />
     </article>
   );
 }
+
 function AudioRecorderApp() {
   let {
     error,
@@ -333,7 +400,7 @@ function AudioRecorderApp() {
     stopRecording,
     startRecording
   } = useMediaRecorder({
-    blobOptions: { type: 'audio/mp3' },
+    blobOptions: { type: 'audio/wav' },
     mediaStreamConstraints: { audio: true }
   });
 
