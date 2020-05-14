@@ -30,17 +30,24 @@ function validateMediaTrackConstraints(mediaType) {
 const noop = () => {};
 
 /**
- * @typedef BlobOptions
+ * @typedef StopCallbackParams
  * @type {object}
- * @property {string} type
+ * @property {Blob} blob
+ * @property {string} url
+ *
+ * @callback StopCallback
+ * @param {StopCallbackParams}
+ *
+ * @callback ErrorCallback
+ * @param {Error}
  *
  * @typedef MediaRecorderProps
  * @type {object}
- * @property {BlobOptions} blobOptions
+ * @property {BlobPropertyBag} blobOptions
  * @property {boolean} recordScreen
  * @property {function} onStart
- * @property {function} onStop
- * @property {function} onError
+ * @property {StopCallback} onStop
+ * @property {ErrorCallback} onError
  * @property {object} mediaRecorderOptions
  * @property {MediaStreamConstraints} mediaStreamConstraints
  *
@@ -256,7 +263,7 @@ function useMediaRecorder({
     unMuteAudio: () => muteAudio(false),
     get liveStream() {
       if (mediaStream.current) {
-        return new MediaStream(mediaStream.current);
+        return new MediaStream(mediaStream.current.getVideoTracks());
       }
       return null;
     }
@@ -283,9 +290,7 @@ function LiveStreamPreview({ stream }) {
     return null;
   }
 
-  return (
-    <video ref={videoPreviewRef} width={520} height={480} autoPlay muted />
-  );
+  return <video ref={videoPreviewRef} width={520} height={480} autoPlay />;
 }
 
 function VideoRecorderApp() {
