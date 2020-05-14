@@ -14,7 +14,7 @@ function validateMediaTrackConstraints(mediaType) {
   if (unSupportedMediaConstraints.length !== 0) {
     let toText = unSupportedMediaConstraints.join(',');
     console.error(
-      `The constraints ${toText} doesn't support on this browser. Please check your ReactMediaRecorder component.`
+      `The following constraints ${toText} are not supported on this browser.`
     );
   }
 }
@@ -26,8 +26,8 @@ function useMediaRecorder({
   recordScreen,
   onStop = noop,
   onStart = noop,
-  mediaRecorderOptions = null,
-  mediaStreamConstraints = { audio: true, video: true }
+  mediaRecorderOptions,
+  mediaStreamConstraints = {}
 } = {}) {
   let mediaChunks = React.useRef([]);
   let mediaStream = React.useRef(null);
@@ -112,7 +112,7 @@ function useMediaRecorder({
     setStatus('stopped');
     setMediaBlobUrl(url);
     setMediaBlob(blob);
-    onStop(url);
+    onStop({ blob, url });
   }
 
   function handleError(e) {
@@ -147,6 +147,8 @@ function useMediaRecorder({
       setStatus('stopping');
       mediaRecorder.current.stop();
       mediaStream.current.getTracks().forEach(track => track.stop());
+      // not sure whether to place clean up in useEffect?
+      // If placed in useEffect the handler functions become dependencies of useEffect
       mediaRecorder.current.removeEventListener(
         'dataavailable',
         handleDataAvailable
@@ -161,11 +163,13 @@ function useMediaRecorder({
 
   React.useEffect(() => {
     if (!window.MediaRecorder) {
-      throw new Error('Unsupported browser');
+      throw new Error(
+        'MediaRecorder is not supported in this browser. Please ensure that you are running the latest version of chrome/firefox/edge.'
+      );
     }
 
-    if (!window.navigator.mediaDevices.getDisplayMedia) {
-      throw new Error("This browser doesn't support screen capturing");
+    if (recordScreen && !window.navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('This browser does not support screen capturing');
     }
 
     if (isObject(mediaStreamConstraints.video)) {
@@ -179,11 +183,11 @@ function useMediaRecorder({
     if (mediaRecorderOptions && mediaRecorderOptions.mimeType) {
       if (!MediaRecorder.isTypeSupported(mediaRecorderOptions.mimeType)) {
         console.error(
-          `The specified MIME type you supplied for MediaRecorder doesn't support this browser`
+          `The specified MIME type supplied to MediaRecorder is not supported by this browser.`
         );
       }
     }
-  }, [mediaStreamConstraints, mediaRecorderOptions]);
+  }, [mediaStreamConstraints, mediaRecorderOptions, recordScreen]);
 
   return {
     error,
@@ -207,7 +211,7 @@ function useMediaRecorder({
   };
 }
 
-function LiveStream({ stream }) {
+function LiveStreamPreview({ stream }) {
   let videoPreviewRef = React.useRef();
 
   React.useEffect(() => {
@@ -221,14 +225,7 @@ function LiveStream({ stream }) {
   }
 
   return (
-    <video
-      ref={videoPreviewRef}
-      width={520}
-      height={480}
-      autoPlay
-      controls
-      muted
-    />
+    <video ref={videoPreviewRef} width={520} height={480} autoPlay muted />
   );
 }
 
@@ -241,12 +238,14 @@ function VideoRecorderApp() {
     stopRecording,
     getMediaStream,
     startRecording
-  } = useMediaRecorder();
+  } = useMediaRecorder({
+    mediaStreamConstraints: { audio: true, video: true }
+  });
 
   return (
     <article>
       <h1>Video recorder</h1>
-      {error ? error.message : status}
+      {error ? `${status} ${error.message}` : status}
       <section>
         <button
           type="button"
@@ -270,7 +269,7 @@ function VideoRecorderApp() {
           Stop recording
         </button>
       </section>
-      <LiveStream stream={liveStream} />
+      <LiveStreamPreview stream={liveStream} />
       <video src={mediaBlobUrl} width={520} height={480} />
     </article>
   );
@@ -287,13 +286,14 @@ function ScreenRecorderApp() {
     startRecording
   } = useMediaRecorder({
     recordScreen: true,
-    blobOptions: { type: 'video/mp4' }
+    blobOptions: { type: 'video/mp4' },
+    mediaStreamConstraints: { audio: true, video: true }
   });
 
   return (
     <article>
       <h1>Screen recorder</h1>
-      {error ? error.message : status}
+      {error ? `${status} ${error.message}` : status}
       <section>
         <button
           type="button"
@@ -317,7 +317,7 @@ function ScreenRecorderApp() {
           Stop recording
         </button>
       </section>
-      <LiveStream stream={liveStream} />
+      <LiveStreamPreview stream={liveStream} />
       <video src={mediaBlobUrl} width={520} height={480} />
     </article>
   );
@@ -330,14 +330,14 @@ function AudioRecorderApp() {
     stopRecording,
     startRecording
   } = useMediaRecorder({
-    mediaStreamConstraints: { audio: true },
-    blobOptions: { type: 'audio/mp3' }
+    blobOptions: { type: 'audio/mp3' },
+    mediaStreamConstraints: { audio: true }
   });
 
   return (
     <article>
       <h1>Audio recorder</h1>
-      {error ? error.message : status}
+      {error ? `${status} ${error.message}` : status}
       <section>
         <button
           type="button"
