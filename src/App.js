@@ -26,6 +26,7 @@ function useMediaRecorder({
   recordScreen,
   onStop = noop,
   onStart = noop,
+  onError = noop,
   mediaRecorderOptions,
   mediaStreamConstraints = {}
 } = {}) {
@@ -118,6 +119,7 @@ function useMediaRecorder({
   function handleError(e) {
     setError(e.error);
     setStatus('idle');
+    onError(e.error);
   }
 
   function muteAudio(mute) {
