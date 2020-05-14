@@ -40,6 +40,7 @@ function useMediaRecorder({
   let [isAudioMuted, setIsAudioMuted] = React.useState(false);
 
   async function getMediaStream() {
+    setError(null);
     setStatus('acquiring_media');
 
     try {
